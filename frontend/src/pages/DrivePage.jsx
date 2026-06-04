@@ -1170,9 +1170,9 @@ export default function DrivePage() {
                   </select>
                 </div>
 
-                {/* City Mapping */}
+                {/* District Mapping */}
                 <div className="form-group">
-                  <label className="form-label">City Mapping</label>
+                  <label className="form-label">District Mapping</label>
                   <select 
                     className="form-select" 
                     value={bulkCitySource} 
