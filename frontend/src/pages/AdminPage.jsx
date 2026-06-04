@@ -18,7 +18,9 @@ export default function AdminPage() {
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef(null);
 
-  // New Item State
+  // Multi-Select State
+  const [selectedUsers, setSelectedUsers] = useState(new Set());
+  const [selectedLocations, setSelectedLocations] = useState(new Set());
   const [createModal, setCreateModal] = useState({ open: false, type: null });
   const [formData, setFormData] = useState({ name: '', email: '', password: '', role: 'viewer', code: '', parent_id: '' });
 
@@ -46,6 +48,8 @@ export default function AdminPage() {
       navigate('/drive', { replace: true });
       return;
     }
+    setSelectedUsers(new Set());
+    setSelectedLocations(new Set());
     loadData();
   }, [activeTab, locTab]);
 
@@ -113,6 +117,26 @@ export default function AdminPage() {
     } catch (e) { toast.error('Failed to delete'); }
   };
 
+  const handleBulkDeleteUsers = async () => {
+    if (!window.confirm(`Are you sure you want to delete ${selectedUsers.size} users?`)) return;
+    try {
+      await api.bulkDelete({ users: Array.from(selectedUsers) });
+      toast.success('Users deleted successfully');
+      setSelectedUsers(new Set());
+      loadData();
+    } catch (e) { toast.error('Bulk delete failed'); }
+  };
+
+  const handleBulkDeleteLocations = async () => {
+    if (!window.confirm(`Are you sure you want to delete ${selectedLocations.size} locations? This is permanent!`)) return;
+    try {
+      await api.bulkDelete({ locations: { type: locTab, ids: Array.from(selectedLocations) } });
+      toast.success('Locations deleted successfully');
+      setSelectedLocations(new Set());
+      loadData();
+    } catch (e) { toast.error('Bulk delete failed'); }
+  };
+
   const handleRenameLocation = async (l) => {
     const newName = window.prompt(`Rename ${locTab.replace(/s$/, '')}:`, l.name);
     if (!newName || !newName.trim() || newName.trim() === l.name) return;
@@ -127,14 +151,39 @@ export default function AdminPage() {
     <div className={styles.card}>
       <div className={styles.cardHead}>
         <h2 className={styles.cardTitle}>User Management</h2>
-        <button className="btn btn-primary btn-sm" onClick={() => openCreateModal('users')}>+ New User</button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          {selectedUsers.size > 0 && (
+            <button className="btn btn-danger btn-sm" onClick={handleBulkDeleteUsers}>
+              Trash {selectedUsers.size} Selected
+            </button>
+          )}
+          <button className="btn btn-primary btn-sm" onClick={() => openCreateModal('users')}>+ New User</button>
+        </div>
       </div>
       <div style={{overflowX:'auto'}}>
         <table className={styles.table}>
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th>Actions</th></tr></thead>
+          <thead><tr>
+            <th style={{ width: '40px' }}>
+              <input type="checkbox" 
+                checked={users.length > 0 && selectedUsers.size === users.length} 
+                onChange={(e) => setSelectedUsers(e.target.checked ? new Set(users.map(u => u.id)) : new Set())} 
+              />
+            </th>
+            <th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th>Actions</th>
+          </tr></thead>
           <tbody>
             {users.map(u => (
-              <tr key={u.id}>
+              <tr key={u.id} style={{ background: selectedUsers.has(u.id) ? 'rgba(99,102,241,0.05)' : '' }}>
+                <td>
+                  <input type="checkbox" 
+                    checked={selectedUsers.has(u.id)} 
+                    onChange={(e) => {
+                      const newSet = new Set(selectedUsers);
+                      if (e.target.checked) newSet.add(u.id); else newSet.delete(u.id);
+                      setSelectedUsers(newSet);
+                    }} 
+                  />
+                </td>
                 <td style={{fontWeight:600}}>{u.name}</td>
                 <td>{u.email}</td>
                 <td><span className={`${styles.badge} ${styles['badge-'+u.role]}`}>{u.role.replace('_', ' ')}</span></td>
@@ -170,6 +219,11 @@ export default function AdminPage() {
         <div className={styles.cardHead}>
           <h2 className={styles.cardTitle}>{locTab.charAt(0).toUpperCase() + locTab.slice(1)}</h2>
           <div style={{ display: 'flex', gap: '10px' }}>
+            {selectedLocations.size > 0 && (
+              <button className="btn btn-danger btn-sm" onClick={handleBulkDeleteLocations}>
+                Trash {selectedLocations.size} Selected
+              </button>
+            )}
             <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept=".xlsx, .xls" onChange={handleImport} />
             <button className="btn btn-secondary btn-sm" onClick={() => fileInputRef.current?.click()} disabled={importing}>
               {importing ? 'Importing...' : '📥 Import Excel'}
@@ -181,6 +235,12 @@ export default function AdminPage() {
           <table className={styles.table}>
             <thead>
               <tr>
+                <th style={{ width: '40px' }}>
+                  <input type="checkbox" 
+                    checked={locations.length > 0 && selectedLocations.size === locations.length} 
+                    onChange={(e) => setSelectedLocations(e.target.checked ? new Set(locations.map(l => l.id)) : new Set())} 
+                  />
+                </th>
                 <th>ID</th><th>Name</th>
                 {locTab === 'countries' && <th>Code</th>}
                 {locTab === 'states' && <th>Country ID</th>}
@@ -191,7 +251,17 @@ export default function AdminPage() {
             </thead>
             <tbody>
               {locations.map(l => (
-                <tr key={l.id}>
+                <tr key={l.id} style={{ background: selectedLocations.has(l.id) ? 'rgba(99,102,241,0.05)' : '' }}>
+                  <td>
+                    <input type="checkbox" 
+                      checked={selectedLocations.has(l.id)} 
+                      onChange={(e) => {
+                        const newSet = new Set(selectedLocations);
+                        if (e.target.checked) newSet.add(l.id); else newSet.delete(l.id);
+                        setSelectedLocations(newSet);
+                      }} 
+                    />
+                  </td>
                   <td>{l.id}</td>
                   <td style={{fontWeight:600}}>{l.name}</td>
                   {locTab === 'countries' && <td>{l.code}</td>}

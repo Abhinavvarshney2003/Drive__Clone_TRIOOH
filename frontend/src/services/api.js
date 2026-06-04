@@ -87,6 +87,9 @@ class ApiClient {
     formData.append('file', file);
     return this.request('/locations/import', { method: 'POST', body: formData });
   }
+  bulkDelete(payload) {
+    return this.request('/bulk/delete', { method: 'POST', body: JSON.stringify(payload) });
+  }
 
 }
 

@@ -92,6 +92,12 @@ export default function DrivePage() {
   const [folders, setFolders] = useState([]);
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [imgTotal, setImgTotal] = useState(0);
+  const [imgPage, setImgPage] = useState(1);
+
+  // Multi-Select State
+  const [selectedFiles, setSelectedFiles] = useState(new Set());
+  const [selectedFolders, setSelectedFolders] = useState(new Set());
   const [viewMode, setViewMode] = useState('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [isDragging, setIsDragging] = useState(false);
@@ -110,8 +116,6 @@ export default function DrivePage() {
   const [allVillageFolders, setAllVillageFolders] = useState([]);
   const [folderName, setFolderName] = useState('');
   const [modalLoading, setModalLoading] = useState(false);
-  const [imgPage, setImgPage] = useState(1);
-  const [imgTotal, setImgTotal] = useState(0);
 
   // Bulk Import States
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
@@ -184,6 +188,8 @@ export default function DrivePage() {
   }, [loadLocations]);
 
   const loadContent = useCallback(async (villageId, folderId, page = 1, search = '') => {
+    setSelectedFiles(new Set());
+    setSelectedFolders(new Set());
     if (!villageId) return;
     setLoading(true);
     try {
@@ -728,6 +734,42 @@ export default function DrivePage() {
   const initials = getInitials(user?.name || '');
   const avatarBg = avatarColor(user?.name || '');
 
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Are you sure you want to delete ${selectedFolders.size + selectedFiles.size} items?`)) return;
+    try {
+      await api.bulkDelete({
+        folders: Array.from(selectedFolders),
+        images: Array.from(selectedFiles)
+      });
+      toast.success('Deleted successfully');
+      loadContent(selectedVillage.id, currentFolder?.id, imgPage, searchQuery);
+    } catch (e) {
+      toast.error('Bulk delete failed');
+    }
+  };
+
+  const toggleSelectFolder = (id) => {
+    const s = new Set(selectedFolders);
+    if (s.has(id)) s.delete(id); else s.add(id);
+    setSelectedFolders(s);
+  };
+
+  const toggleSelectImage = (id) => {
+    const s = new Set(selectedFiles);
+    if (s.has(id)) s.delete(id); else s.add(id);
+    setSelectedFiles(s);
+  };
+
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      setSelectedFolders(new Set(folders.map(f => f.id)));
+      setSelectedFiles(new Set(images.map(i => i.id)));
+    } else {
+      setSelectedFolders(new Set());
+      setSelectedFiles(new Set());
+    }
+  };
+
   return (
     <div className={styles.layout}
       onDragOver={e => { e.preventDefault(); if (canUpload()) setIsDragging(true); }}
@@ -889,13 +931,30 @@ export default function DrivePage() {
               {/* Toolbar */}
               <div className={styles.toolbar}>
                 <h1 className={styles.toolbarTitle}>{currentFolder?.name || selectedVillage.name}</h1>
-                <div style={{marginLeft:'auto',display:'flex',gap:'6px'}}>
+                <div style={{marginLeft:'auto',display:'flex',gap:'12px', alignItems:'center'}}>
+                  {(folders.length > 0 || images.length > 0) && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', cursor: 'pointer', color: 'var(--txt-2)' }}>
+                      <input type="checkbox" 
+                        checked={(folders.length > 0 || images.length > 0) && selectedFolders.size === folders.length && selectedFiles.size === images.length}
+                        onChange={handleSelectAll} 
+                      /> Select All
+                    </label>
+                  )}
                   <div className={styles.viewToggle}>
                     <button className={`${styles.vBtn} ${viewMode==='grid'?styles.vActive:''}`} onClick={() => setViewMode('grid')} title="Grid"><GridIcon /></button>
                     <button className={`${styles.vBtn} ${viewMode==='list'?styles.vActive:''}`} onClick={() => setViewMode('list')} title="List"><ListIcon /></button>
                   </div>
                 </div>
               </div>
+
+              {(selectedFolders.size > 0 || selectedFiles.size > 0) && (
+                <div style={{ background: 'var(--brand)', color: 'white', padding: '12px 20px', borderRadius: 'var(--r-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <span style={{ fontWeight: 600 }}>{selectedFolders.size + selectedFiles.size} items selected</span>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    {canDelete() && <button className="btn btn-sm" style={{ background: '#fff', color: 'var(--brand)' }} onClick={handleBulkDelete}><TrashIcon /> Delete Selected</button>}
+                  </div>
+                </div>
+              )}
 
               {loading ? (
                 <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'200px',gap:'12px',color:'var(--txt-3)'}}>
@@ -909,13 +968,15 @@ export default function DrivePage() {
                       <div className={styles.sectionHead}><span>Folders</span><span className={styles.sectionBadge}>{folders.length}</span></div>
                       <div className={viewMode==='grid' ? styles.grid : styles.list}>
                         {folders.map(f => viewMode === 'grid' ? (
-                          <div key={f.id} className={styles.folderCard} onClick={() => openFolder(f)} onContextMenu={e => openCtx(e,f,'folder')}>
+                          <div key={f.id} className={`${styles.folderCard} ${selectedFolders.has(f.id) ? styles.selected : ''}`} onClick={() => openFolder(f)} onContextMenu={e => openCtx(e,f,'folder')}>
+                            <input type="checkbox" checked={selectedFolders.has(f.id)} onChange={(e) => { e.stopPropagation(); toggleSelectFolder(f.id); }} style={{ position: 'absolute', top: '12px', left: '12px', zIndex: 2, transform: 'scale(1.2)' }} onClick={e => e.stopPropagation()} />
                             <button className={styles.cardDots} onClick={e => {e.stopPropagation();openCtx(e,f,'folder')}}><DotsIcon /></button>
                             <div className={styles.folderIconBox}><FolderBigIcon /></div>
                             <span className={`${styles.folderLabel} truncate`}>{f.name}</span>
                           </div>
                         ) : (
-                          <div key={f.id} className={styles.listRow} onClick={() => openFolder(f)} onContextMenu={e => openCtx(e,f,'folder')}>
+                          <div key={f.id} className={`${styles.listRow} ${selectedFolders.has(f.id) ? styles.selected : ''}`} onClick={() => openFolder(f)} onContextMenu={e => openCtx(e,f,'folder')}>
+                            <input type="checkbox" checked={selectedFolders.has(f.id)} onChange={(e) => { e.stopPropagation(); toggleSelectFolder(f.id); }} style={{ marginRight: '16px', transform: 'scale(1.2)' }} onClick={e => e.stopPropagation()} />
                             <div className={`${styles.listThumb} ${styles.listThumbFolder}`}><FolderBigIcon /></div>
                             <div style={{flex:1,minWidth:0}}>
                               <div className="truncate" style={{fontSize:'0.875rem',fontWeight:600}}>{f.name}</div>
@@ -936,7 +997,8 @@ export default function DrivePage() {
                         {images.map((img, idx) => {
                           const src = getImageUrl(img);
                           return viewMode === 'grid' ? (
-                            <div key={img.id} className={styles.imgCard} onClick={() => openLightbox(images,idx)} onContextMenu={e => openCtx(e,img,'image')}>
+                            <div key={img.id} className={`${styles.imgCard} ${selectedFiles.has(img.id) ? styles.selected : ''}`} onClick={() => openLightbox(images,idx)} onContextMenu={e => openCtx(e,img,'image')}>
+                              <input type="checkbox" checked={selectedFiles.has(img.id)} onChange={(e) => { e.stopPropagation(); toggleSelectImage(img.id); }} style={{ position: 'absolute', top: '12px', left: '12px', zIndex: 2, transform: 'scale(1.2)', cursor: 'pointer' }} onClick={e => e.stopPropagation()} />
                               <button className={styles.cardDots} onClick={e=>{e.stopPropagation();openCtx(e,img,'image')}}><DotsIcon /></button>
                               {src
                                 ? <LazyImage src={src} alt={img.name||''} className={styles.imgThumb} />
@@ -946,7 +1008,8 @@ export default function DrivePage() {
                               </div>
                             </div>
                           ) : (
-                            <div key={img.id} className={styles.listRow} onClick={() => openLightbox(images,idx)} onContextMenu={e => openCtx(e,img,'image')}>
+                            <div key={img.id} className={`${styles.listRow} ${selectedFiles.has(img.id) ? styles.selected : ''}`} onClick={() => openLightbox(images,idx)} onContextMenu={e => openCtx(e,img,'image')}>
+                              <input type="checkbox" checked={selectedFiles.has(img.id)} onChange={(e) => { e.stopPropagation(); toggleSelectImage(img.id); }} style={{ marginRight: '16px', transform: 'scale(1.2)', cursor: 'pointer' }} onClick={e => e.stopPropagation()} />
                               <div className={`${styles.listThumb} ${styles.listThumbImg}`}>
                                 {src ? <LazyImage src={src} alt="" /> : '🖼️'}
                               </div>
