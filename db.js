@@ -50,6 +50,33 @@ const initDb = async () => {
       );
       console.log('✅ Added data LONGBLOB column.');
     }
+
+    // Auto-create tehsils table if not exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tehsils (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        city_id INT UNSIGNED NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (city_id) REFERENCES cities(id) ON DELETE CASCADE
+      )
+    `);
+    
+    // Check if 'tehsil_id' column exists in 'villages'
+    const [tehsilCol] = await pool.query(
+      `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'villages' AND COLUMN_NAME = 'tehsil_id'`,
+      [dbName]
+    );
+
+    if (tehsilCol.length === 0) {
+      console.log('🔄 Migrating database: Adding tehsil_id column to villages table...');
+      await pool.query(
+        `ALTER TABLE villages ADD COLUMN tehsil_id INT UNSIGNED, ADD FOREIGN KEY (tehsil_id) REFERENCES tehsils(id) ON DELETE CASCADE`
+      );
+      console.log('✅ Added tehsil_id column.');
+    }
+
   } catch (err) {
     console.error('❌ MySQL Database initialization failed:', err.message);
   }

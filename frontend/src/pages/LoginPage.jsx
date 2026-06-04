@@ -69,10 +69,7 @@ export default function LoginPage() {
       <div className={styles.card}>
         {/* Logo */}
         <div className={styles.logo}>
-          <div className={styles.logoIcon}>
-            <DriveIcon />
-          </div>
-          <span className={`${styles.logoText} text-gradient`}>DGDrive</span>
+          <img src="/logo.png" alt="DGDrive Logo" style={{ height: '48px', width: 'auto' }} />
         </div>
 
         <h1 className={styles.title}>Welcome back</h1>

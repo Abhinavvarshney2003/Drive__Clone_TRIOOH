@@ -5,7 +5,7 @@ import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import jwt from 'jsonwebtoken';
 import db from './db.js';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -88,8 +88,6 @@ app.use((req, res, next) => {
     const log = `${new Date().toISOString()} ${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`;
     if (res.statusCode >= 400) {
       console.error(log);
-    } else if (NODE_ENV !== 'production' || req.originalUrl.startsWith('/api/')) {
-      console.log(log);
     }
   });
   next();
@@ -284,7 +282,7 @@ app.post('/api/users', auth, adminAuth, async (req, res) => {
 });
 
 // ── LOCATIONS ───────────────────────────────────────────────────────────────
-const VALID_LOCATION_TABLES = ['countries', 'states', 'cities', 'villages'];
+const VALID_LOCATION_TABLES = ['countries', 'states', 'cities', 'tehsils', 'villages'];
 
 app.get('/api/locations/countries', auth, async (req, res) => {
   try {
@@ -317,10 +315,21 @@ app.get('/api/locations/cities', auth, async (req, res) => {
   }
 });
 
+app.get('/api/locations/tehsils', auth, async (req, res) => {
+  try {
+    const [tehsils] = req.query.city_id
+      ? await db.query('SELECT * FROM tehsils WHERE city_id = ? ORDER BY name ASC', [req.query.city_id])
+      : await db.query('SELECT * FROM tehsils ORDER BY name ASC');
+    res.json({ success: true, data: tehsils });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 app.get('/api/locations/villages', auth, async (req, res) => {
   try {
-    const [villages] = req.query.city_id
-      ? await db.query('SELECT * FROM villages WHERE city_id = ? ORDER BY name ASC', [req.query.city_id])
+    const [villages] = req.query.tehsil_id
+      ? await db.query('SELECT * FROM villages WHERE tehsil_id = ? ORDER BY name ASC', [req.query.tehsil_id])
       : await db.query('SELECT * FROM villages ORDER BY name ASC');
     res.json({ success: true, data: villages });
   } catch (err) {
@@ -344,8 +353,45 @@ app.post('/api/locations/:type', auth, adminAuth, async (req, res) => {
     if (type === 'countries') await db.query('INSERT INTO countries (name, code) VALUES (?, ?)', [name, code]);
     if (type === 'states') await db.query('INSERT INTO states (name, country_id) VALUES (?, ?)', [name, parent_id]);
     if (type === 'cities') await db.query('INSERT INTO cities (name, state_id) VALUES (?, ?)', [name, parent_id]);
-    if (type === 'villages') await db.query('INSERT INTO villages (name, city_id) VALUES (?, ?)', [name, parent_id]);
+    if (type === 'tehsils') await db.query('INSERT INTO tehsils (name, city_id) VALUES (?, ?)', [name, parent_id]);
+    if (type === 'villages') await db.query('INSERT INTO villages (name, tehsil_id, city_id) VALUES (?, ?, ?)', [name, parent_id, null]);
     res.json({ success: true, message: 'Created' });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
+app.put('/api/locations/:type/:id', auth, adminAuth, async (req, res) => {
+  const { type, id } = req.params;
+  const { name, parent_id } = req.body;
+
+  if (!VALID_LOCATION_TABLES.includes(type)) {
+    return res.status(400).json({ success: false, message: `Invalid location type.` });
+  }
+  
+  try {
+    let updates = [];
+    let params = [];
+    if (name && name.trim()) { updates.push('name = ?'); params.push(name.trim()); }
+    
+    if (parent_id !== undefined) {
+      let parentColumn = '';
+      if (type === 'states') parentColumn = 'country_id';
+      else if (type === 'cities') parentColumn = 'state_id';
+      else if (type === 'tehsils') parentColumn = 'city_id';
+      else if (type === 'villages') parentColumn = 'tehsil_id';
+      
+      if (parentColumn) {
+        updates.push(`${parentColumn} = ?`);
+        params.push(parent_id);
+      }
+    }
+    
+    if (updates.length > 0) {
+      params.push(id);
+      await db.query(`UPDATE ${type} SET ${updates.join(', ')} WHERE id = ?`, params);
+    }
+    res.json({ success: true, message: 'Updated' });
   } catch (e) {
     res.status(400).json({ success: false, message: e.message });
   }
@@ -397,12 +443,43 @@ app.post('/api/folders', auth, async (req, res) => {
   }
 });
 
-app.put('/api/folders/:id', auth, async (req, res) => {
-  if (!req.body.name || !req.body.name.trim()) {
-    return res.status(400).json({ success: false, message: 'Folder name is required' });
+app.put('/api/folders/:id', auth, adminAuth, async (req, res) => {
+  const { name, parent_id } = req.body;
+  if (!name && parent_id === undefined) {
+    return res.status(400).json({ success: false, message: 'No updates provided' });
   }
   try {
-    await db.query('UPDATE folders SET name = ? WHERE id = ?', [req.body.name, req.params.id]);
+    let updates = [];
+    let params = [];
+    if (name && name.trim()) {
+      updates.push('name = ?');
+      params.push(name.trim());
+    }
+    if (parent_id !== undefined) {
+      updates.push('parent_id = ?');
+      params.push(parent_id);
+    }
+    if (updates.length > 0) {
+      params.push(req.params.id);
+      await db.query(`UPDATE folders SET ${updates.join(', ')} WHERE id = ?`, params);
+    }
+    res.json({ success: true, message: 'Updated' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.put('/api/images/:id', auth, adminAuth, async (req, res) => {
+  const { folder_id, name } = req.body;
+  try {
+    let updates = [];
+    let params = [];
+    if (name && name.trim()) { updates.push('name = ?'); params.push(name.trim()); }
+    if (folder_id !== undefined) { updates.push('folder_id = ?'); params.push(folder_id); }
+    if (updates.length > 0) {
+      params.push(req.params.id);
+      await db.query(`UPDATE images SET ${updates.join(', ')} WHERE id = ?`, params);
+    }
     res.json({ success: true, message: 'Updated' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -504,7 +581,7 @@ app.post('/api/images/upload', auth, upload.array('images[]', 20), async (req, r
 
 // Bulk upload endpoint with dynamic database folder structure creation
 app.post('/api/images/upload-bulk', auth, upload.single('image'), async (req, res) => {
-  const { state_id, city_id, city_name, village_id, village_name, folder_id, folder_names } = req.body;
+  const { state_id, city_id, city_name, tehsil_id, tehsil_name, village_id, village_name, folder_id, folder_names } = req.body;
   const file = req.file;
 
   if (!file) {
@@ -516,6 +593,7 @@ app.post('/api/images/upload-bulk', auth, upload.single('image'), async (req, re
 
   try {
     let resolvedCityId = city_id ? parseInt(city_id, 10) : null;
+    let resolvedTehsilId = tehsil_id ? parseInt(tehsil_id, 10) : null;
     let resolvedVillageId = village_id ? parseInt(village_id, 10) : null;
     let resolvedFolderId = null;
 
@@ -550,37 +628,67 @@ app.post('/api/images/upload-bulk', auth, upload.single('image'), async (req, re
       }
     }
 
+    // 1.5. Resolve Tehsil
+    if (!resolvedTehsilId && tehsil_name && tehsil_name.trim() && resolvedCityId) {
+      const trimmedTehsil = tehsil_name.trim();
+      const [tehsils] = await db.query(
+        'SELECT id FROM tehsils WHERE LOWER(name) = LOWER(?) AND city_id = ?',
+        [trimmedTehsil, resolvedCityId]
+      );
+      if (tehsils.length > 0) {
+        resolvedTehsilId = tehsils[0].id;
+      } else {
+        try {
+          const [insertRes] = await db.query(
+            'INSERT INTO tehsils (name, city_id) VALUES (?, ?)',
+            [trimmedTehsil, resolvedCityId]
+          );
+          resolvedTehsilId = insertRes.insertId;
+        } catch (err) {
+          if (err.code === 'ER_DUP_ENTRY') {
+            const [tehsilsRetry] = await db.query(
+              'SELECT id FROM tehsils WHERE LOWER(name) = LOWER(?) AND city_id = ?',
+              [trimmedTehsil, resolvedCityId]
+            );
+            resolvedTehsilId = tehsilsRetry[0].id;
+          } else {
+            throw err;
+          }
+        }
+      }
+    }
+
     // 2. Resolve Village
     let finalVillageName = village_name;
-    if (!resolvedVillageId && (!finalVillageName || !finalVillageName.trim()) && resolvedCityId) {
-      const [cityRow] = await db.query('SELECT name FROM cities WHERE id = ?', [resolvedCityId]);
-      if (cityRow.length > 0) {
-        finalVillageName = cityRow[0].name + ' (Town)';
+    if (!resolvedVillageId && (!finalVillageName || !finalVillageName.trim()) && resolvedTehsilId) {
+      const [tehsilRow] = await db.query('SELECT name FROM tehsils WHERE id = ?', [resolvedTehsilId]);
+      if (tehsilRow.length > 0) {
+        finalVillageName = tehsilRow[0].name + ' (Town)';
       } else {
         finalVillageName = 'Default Village';
       }
     }
 
-    if (!resolvedVillageId && finalVillageName && finalVillageName.trim() && resolvedCityId) {
+    if (!resolvedVillageId && finalVillageName && finalVillageName.trim() && resolvedTehsilId) {
       const trimmedVillage = finalVillageName.trim();
       const [villages] = await db.query(
-        'SELECT id FROM villages WHERE LOWER(name) = LOWER(?) AND city_id = ?',
-        [trimmedVillage, resolvedCityId]
+        'SELECT id FROM villages WHERE LOWER(name) = LOWER(?) AND tehsil_id = ?',
+        [trimmedVillage, resolvedTehsilId]
       );
       if (villages.length > 0) {
         resolvedVillageId = villages[0].id;
       } else {
         try {
           const [insertRes] = await db.query(
-            'INSERT INTO villages (name, city_id) VALUES (?, ?)',
-            [trimmedVillage, resolvedCityId]
+            'INSERT INTO villages (name, tehsil_id, city_id) VALUES (?, ?, ?)',
+            [trimmedVillage, resolvedTehsilId, resolvedCityId]
           );
           resolvedVillageId = insertRes.insertId;
         } catch (err) {
           if (err.code === 'ER_DUP_ENTRY') {
             const [villagesRetry] = await db.query(
-              'SELECT id FROM villages WHERE LOWER(name) = LOWER(?) AND city_id = ?',
-              [trimmedVillage, resolvedCityId]
+              'SELECT id FROM villages WHERE LOWER(name) = LOWER(?) AND tehsil_id = ?',
+              [trimmedVillage, resolvedTehsilId]
             );
             resolvedVillageId = villagesRetry[0].id;
           } else {
@@ -588,8 +696,8 @@ app.post('/api/images/upload-bulk', auth, upload.single('image'), async (req, re
           }
         }
       }
-    } else if (finalVillageName && finalVillageName.trim() && !resolvedCityId && !resolvedVillageId) {
-      return res.status(400).json({ success: false, message: 'City context is missing or could not be resolved for the village' });
+    } else if (finalVillageName && finalVillageName.trim() && !resolvedTehsilId && !resolvedVillageId) {
+      return res.status(400).json({ success: false, message: 'Tehsil context is missing or could not be resolved for the village' });
     }
 
     // 3. Resolve Folder path recursively under the Village
@@ -658,6 +766,7 @@ app.post('/api/images/upload-bulk', auth, upload.single('image'), async (req, re
       data: {
         image: rows[0],
         resolvedCityId,
+        resolvedTehsilId,
         resolvedVillageId,
         resolvedFolderId
       }

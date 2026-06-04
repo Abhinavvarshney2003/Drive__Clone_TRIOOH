@@ -65,6 +65,11 @@ export function AuthProvider({ children }) {
            (user.role && (user.role.toLowerCase().includes('super') || user.role.toLowerCase().includes('admin')));
   };
 
+  const isSuperAdmin = () => {
+    if (!user) return false;
+    return user.role === 'super_admin';
+  };
+
   const isEditor = () => {
     if (!user) return false;
     if (isAdmin()) return true;
@@ -77,6 +82,7 @@ export function AuthProvider({ children }) {
   const canDelete   = () => isEditor();
   const canCreate   = () => isEditor();
   const canManage   = () => isAdmin();
+  const canRenameOrMove = () => isSuperAdmin();
 
   const hasPermission = (perm) =>
     isAdmin() || permissions.some(p => (p.name || p) === perm);
@@ -85,7 +91,7 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={{
       user, roles, permissions, loading,
       login, logout, refreshUser,
-      isAdmin, isEditor, canUpload, canDelete, canCreate, canManage, hasPermission,
+      isSuperAdmin, isAdmin, isEditor, canUpload, canDelete, canCreate, canManage, canRenameOrMove, hasPermission,
     }}>
       {children}
     </AuthContext.Provider>

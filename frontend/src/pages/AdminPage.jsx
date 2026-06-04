@@ -95,6 +95,16 @@ export default function AdminPage() {
     } catch (e) { toast.error('Failed to delete'); }
   };
 
+  const handleRenameLocation = async (l) => {
+    const newName = window.prompt(`Rename ${locTab.replace(/s$/, '')}:`, l.name);
+    if (!newName || !newName.trim() || newName.trim() === l.name) return;
+    try {
+      await api.updateLocation(locTab, l.id, { name: newName.trim() });
+      toast.success('Renamed successfully');
+      loadData();
+    } catch (e) { toast.error('Failed to rename'); }
+  };
+
   const renderUsers = () => (
     <div className={styles.card}>
       <div className={styles.cardHead}>
@@ -165,6 +175,7 @@ export default function AdminPage() {
                   {locTab === 'cities' && <td>{l.state_id}</td>}
                   {locTab === 'villages' && <td>{l.city_id}</td>}
                   <td style={{textAlign:'right'}}>
+                    <button className="btn btn-secondary btn-sm" style={{marginRight: '8px'}} onClick={() => handleRenameLocation(l)}>Rename</button>
                     <button className="btn btn-danger btn-sm" onClick={() => handleDeleteLocation(l.id)}>Delete</button>
                   </td>
                 </tr>

@@ -45,9 +45,11 @@ class ApiClient {
   getCountries() { return this.request('/locations/countries'); }
   getStates(countryId) { return this.request(`/locations/states${countryId ? `?country_id=${countryId}` : ''}`); }
   getCities(stateId) { return this.request(`/locations/cities${stateId ? `?state_id=${stateId}` : ''}`); }
-  getVillages(cityId) { return this.request(`/locations/villages${cityId ? `?city_id=${cityId}` : ''}`); }
+  getTehsils(cityId) { return this.request(`/locations/tehsils${cityId ? `?city_id=${cityId}` : ''}`); }
+  getVillages(tehsilId) { return this.request(`/locations/villages${tehsilId ? `?tehsil_id=${tehsilId}` : ''}`); }
   
   createLocation(type, data) { return this.request(`/locations/${type}`, { method: 'POST', body: JSON.stringify(data) }); }
+  updateLocation(type, id, data) { return this.request(`/locations/${type}/${id}`, { method: 'PUT', body: JSON.stringify(data) }); }
   deleteLocation(type, id) { return this.request(`/locations/${type}/${id}`, { method: 'DELETE' }); }
 
   // Drive
@@ -58,7 +60,7 @@ class ApiClient {
     return this.request(`/folders${q}`);
   }
   createFolder(name, villageId, parentId) { return this.request('/folders', { method: 'POST', body: JSON.stringify({ name, village_id: villageId, parent_id: parentId }) }); }
-  updateFolder(id, name) { return this.request(`/folders/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }); }
+  updateFolder(id, payload) { return this.request(`/folders/${id}`, { method: 'PUT', body: JSON.stringify(payload) }); }
   deleteFolder(id) { return this.request(`/folders/${id}`, { method: 'DELETE' }); }
 
   getImages(page, limit, folderId, villageId, search) {
@@ -79,6 +81,7 @@ class ApiClient {
     return this.request('/images/upload-bulk', { method: 'POST', body: formData });
   }
   deleteImage(id) { return this.request(`/images/${id}`, { method: 'DELETE' }); }
+  updateImage(id, payload) { return this.request(`/images/${id}`, { method: 'PUT', body: JSON.stringify(payload) }); }
 }
 
 const api = new ApiClient();

@@ -13,7 +13,7 @@ function LazyImage({ src, alt, className }) {
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', background: 'var(--bg-raised)' }}>
-      {!loaded && !error && <div className="spinner" style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',color:'var(--brand)'}} />}
+      {!loaded && !error && <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}}><div className="spinner" style={{color:'var(--brand)'}} /></div>}
       {error && <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'2rem'}} title={src}>⚠️</div>}
       {src && !error && (
         <img
@@ -72,7 +72,7 @@ const scanEntry = async (entry, path = '') => {
 };
 
 export default function DrivePage() {
-  const { user, isAdmin, canUpload, canDelete, canCreate, logout } = useAuth();
+  const { user, isAdmin, canUpload, canDelete, canCreate, canRenameOrMove, logout } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
@@ -80,9 +80,11 @@ export default function DrivePage() {
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
   const [states, setStates] = useState([]);
   const [cities, setCities] = useState([]);
+  const [tehsils, setTehsils] = useState([]);
   const [villages, setVillages] = useState([]);
   const [expandedState, setExpandedState] = useState(null);
   const [expandedCity, setExpandedCity] = useState(null);
+  const [expandedTehsil, setExpandedTehsil] = useState(null);
   
   const [selectedVillage, setSelectedVillage] = useState(null);
   const [currentFolder, setCurrentFolder] = useState(null);
@@ -101,6 +103,11 @@ export default function DrivePage() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameItem, setRenameItem] = useState(null);
   const [newName, setNewName] = useState('');
+
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveItem, setMoveItem] = useState(null);
+  const [moveTargetFolderId, setMoveTargetFolderId] = useState('');
+  const [allVillageFolders, setAllVillageFolders] = useState([]);
   const [folderName, setFolderName] = useState('');
   const [modalLoading, setModalLoading] = useState(false);
   const [imgPage, setImgPage] = useState(1);
@@ -111,6 +118,7 @@ export default function DrivePage() {
   const [bulkImportFiles, setBulkImportFiles] = useState([]);
   const [bulkStateId, setBulkStateId] = useState('');
   const [bulkCitySource, setBulkCitySource] = useState('detect');
+  const [bulkTehsilSource, setBulkTehsilSource] = useState('detect');
   const [bulkVillageSource, setBulkVillageSource] = useState('detect');
   const [bulkImportRunning, setBulkImportRunning] = useState(false);
   const [bulkProgressIndex, setBulkProgressIndex] = useState(0);
@@ -118,28 +126,40 @@ export default function DrivePage() {
   const bulkCancelRef = useRef(false);
   const folderInputRef = useRef(null);
 
-  // Auto-contextualize Bulk Importer Modal
   useEffect(() => {
     if (bulkImportOpen && states.length > 0) {
       if (selectedVillage) {
-        const parentCity = cities.find(c => String(c.id) === String(selectedVillage.city_id));
+        const parentTehsil = tehsils.find(t => String(t.id) === String(selectedVillage.tehsil_id));
+        const parentCity = parentTehsil ? cities.find(c => String(c.id) === String(parentTehsil.city_id)) : null;
         const parentState = parentCity ? states.find(s => String(s.id) === String(parentCity.state_id)) : null;
         setBulkStateId(parentState ? parentState.id : states[0]?.id || '');
         setBulkCitySource(parentCity ? parentCity.id : 'detect');
+        setBulkTehsilSource(parentTehsil ? parentTehsil.id : 'detect');
         setBulkVillageSource(selectedVillage.id);
+      } else if (expandedTehsil) {
+        const activeTehsil = tehsils.find(t => String(t.id) === String(expandedTehsil));
+        const parentCity = activeTehsil ? cities.find(c => String(c.id) === String(activeTehsil.city_id)) : null;
+        const parentState = parentCity ? states.find(s => String(s.id) === String(parentCity.state_id)) : null;
+        setBulkStateId(parentState ? parentState.id : states[0]?.id || '');
+        setBulkCitySource(parentCity ? parentCity.id : 'detect');
+        setBulkTehsilSource(expandedTehsil);
+        setBulkVillageSource('detect');
       } else if (expandedCity) {
         const activeCity = cities.find(c => String(c.id) === String(expandedCity));
         const parentState = activeCity ? states.find(s => String(s.id) === String(activeCity.state_id)) : null;
         setBulkStateId(parentState ? parentState.id : states[0]?.id || '');
         setBulkCitySource(expandedCity);
+        setBulkTehsilSource('detect');
         setBulkVillageSource('detect');
       } else if (expandedState) {
         setBulkStateId(expandedState);
         setBulkCitySource('detect');
+        setBulkTehsilSource('detect');
         setBulkVillageSource('detect');
       } else {
         setBulkStateId(states[0]?.id || '');
         setBulkCitySource('detect');
+        setBulkTehsilSource('detect');
         setBulkVillageSource('detect');
       }
       setBulkImportRunning(false);
@@ -147,16 +167,21 @@ export default function DrivePage() {
       setBulkUploadLogs([]);
       bulkCancelRef.current = false;
     }
-  }, [bulkImportOpen, selectedVillage, expandedCity, expandedState, states, cities, villages]);
+  }, [bulkImportOpen, selectedVillage, expandedTehsil, expandedCity, expandedState, states, cities, tehsils, villages]);
+
+  const loadLocations = useCallback(async () => {
+    try {
+      const [sRes, cRes, tRes, vRes] = await Promise.all([api.getStates(), api.getCities(), api.getTehsils(), api.getVillages()]);
+      setStates(sRes?.data || []);
+      setCities(cRes?.data || []);
+      setTehsils(tRes?.data || []);
+      setVillages(vRes?.data || []);
+    } catch (e) {}
+  }, []);
 
   useEffect(() => {
-    Promise.all([api.getStates(), api.getCities(), api.getVillages()])
-      .then(([sRes, cRes, vRes]) => {
-        setStates(sRes?.data || []);
-        setCities(cRes?.data || []);
-        setVillages(vRes?.data || []);
-      }).catch(() => {});
-  }, []);
+    loadLocations();
+  }, [loadLocations]);
 
   const loadContent = useCallback(async (villageId, folderId, page = 1, search = '') => {
     if (!villageId) return;
@@ -312,9 +337,13 @@ export default function DrivePage() {
     setBulkUploadLogs(initialLogs);
 
     // Client-side cache to bypass redundant DB checks
-    const cache = { cities: {}, villages: {}, folders: {} };
+    // Client-side cache to bypass redundant DB checks
+    const cache = { cities: {}, tehsils: {}, villages: {}, folders: {} };
     if (bulkCitySource !== 'detect') {
       cache.cities['selected'] = parseInt(bulkCitySource, 10);
+    }
+    if (bulkTehsilSource !== 'detect') {
+      cache.tehsils['selected'] = parseInt(bulkTehsilSource, 10);
     }
     if (bulkVillageSource !== 'detect') {
       cache.villages['selected'] = parseInt(bulkVillageSource, 10);
@@ -345,42 +374,29 @@ export default function DrivePage() {
 
       try {
         const segments = logName.split('/');
-        const folderSegments = segments.slice(0, -1);
+        let folderSegments = segments.slice(0, -1);
 
         let cityName = null;
+        let tehsilName = null;
         let villageName = null;
         let folderChain = [];
 
         if (bulkCitySource === 'detect') {
           cityName = folderSegments[0] || 'Unknown City';
-          if (bulkVillageSource === 'detect') {
-            if (folderSegments.length >= 3) {
-              villageName = folderSegments[1] || 'Unknown Village';
-              folderChain = folderSegments.slice(2);
-            } else if (folderSegments.length === 2) {
-              villageName = folderSegments[0] + ' (Town)';
-              folderChain = [folderSegments[1]];
-            } else {
-              cityName = 'Default City';
-              villageName = 'Default Village';
-              folderChain = folderSegments;
-            }
-          } else {
-            folderChain = folderSegments.slice(1);
-          }
-        } else {
-          if (bulkVillageSource === 'detect') {
-            if (folderSegments.length >= 2) {
-              villageName = folderSegments[0] || 'Unknown Village';
-              folderChain = folderSegments.slice(1);
-            } else {
-              villageName = 'Default Village';
-              folderChain = folderSegments;
-            }
-          } else {
-            folderChain = folderSegments;
-          }
+          folderSegments = folderSegments.slice(1);
         }
+
+        if (bulkTehsilSource === 'detect') {
+          tehsilName = folderSegments[0] || 'Unknown Tehsil';
+          folderSegments = folderSegments.slice(1);
+        }
+
+        if (bulkVillageSource === 'detect') {
+          villageName = folderSegments[0] || 'Unknown Village';
+          folderSegments = folderSegments.slice(1);
+        }
+
+        folderChain = folderSegments;
 
         const formData = new FormData();
         formData.append('image', file);
@@ -397,8 +413,19 @@ export default function DrivePage() {
           formData.append('city_id', bulkCitySource);
         }
 
+        if (bulkTehsilSource === 'detect') {
+          const tehsilCacheKey = (bulkCitySource === 'detect' ? cityName : 'fixed') + ' > ' + tehsilName;
+          if (cache.tehsils[tehsilCacheKey]) {
+            formData.append('tehsil_id', cache.tehsils[tehsilCacheKey]);
+          } else {
+            formData.append('tehsil_name', tehsilName);
+          }
+        } else {
+          formData.append('tehsil_id', bulkTehsilSource);
+        }
+
         if (bulkVillageSource === 'detect') {
-          const villageCacheKey = (bulkCitySource === 'detect' ? cityName : 'fixed') + ' > ' + villageName;
+          const villageCacheKey = (bulkTehsilSource === 'detect' ? tehsilName : 'fixed') + ' > ' + villageName;
           if (cache.villages[villageCacheKey]) {
             formData.append('village_id', cache.villages[villageCacheKey]);
           } else {
@@ -419,12 +446,16 @@ export default function DrivePage() {
 
         // Update cache with resolved IDs
         if (res.success && res.data) {
-          const { resolvedCityId, resolvedVillageId, resolvedFolderId } = res.data;
+          const { resolvedCityId, resolvedTehsilId, resolvedVillageId, resolvedFolderId } = res.data;
           if (bulkCitySource === 'detect' && resolvedCityId && cityName) {
             cache.cities[cityName] = resolvedCityId;
           }
+          if (bulkTehsilSource === 'detect' && resolvedTehsilId && tehsilName) {
+            const tehsilCacheKey = (bulkCitySource === 'detect' ? cityName : 'fixed') + ' > ' + tehsilName;
+            cache.tehsils[tehsilCacheKey] = resolvedTehsilId;
+          }
           if (bulkVillageSource === 'detect' && resolvedVillageId && villageName) {
-            const villageCacheKey = (bulkCitySource === 'detect' ? cityName : 'fixed') + ' > ' + villageName;
+            const villageCacheKey = (bulkTehsilSource === 'detect' ? tehsilName : 'fixed') + ' > ' + villageName;
             cache.villages[villageCacheKey] = resolvedVillageId;
           }
           if (resolvedFolderId && folderChain.length > 0) {
@@ -605,11 +636,62 @@ export default function DrivePage() {
     if (!newName.trim() || !renameItem) return;
     setModalLoading(true);
     try {
-      if (renameItem.type === 'folder') await api.updateFolder(renameItem.id, newName.trim());
+      if (['states', 'cities', 'tehsils', 'villages'].includes(renameItem.type)) {
+        await api.updateLocation(renameItem.type, renameItem.id, { name: newName.trim() });
+        loadLocations();
+      } else if (renameItem.type === 'folder') {
+        await api.updateFolder(renameItem.id, { name: newName.trim() });
+        loadContent(selectedVillage.id, currentFolder?.id, imgPage, searchQuery);
+      }
       setRenameOpen(false); toast.success('Renamed!');
-      loadContent(selectedVillage.id, currentFolder?.id, imgPage, searchQuery);
     } catch (e) { toast.error(e.message || 'Failed'); }
     finally { setModalLoading(false); }
+  };
+
+  const openMove = async (item, type) => {
+    setMoveItem({ ...item, type });
+    if (['states', 'cities', 'tehsils', 'villages'].includes(type)) {
+       setMoveTargetFolderId(item.country_id || item.state_id || item.city_id || item.tehsil_id || '');
+       if (type === 'states') setAllVillageFolders([{ id: 1, name: 'India' }]);
+       else if (type === 'cities') setAllVillageFolders(states);
+       else if (type === 'tehsils') setAllVillageFolders(cities);
+       else if (type === 'villages') setAllVillageFolders(tehsils);
+    } else {
+       setMoveTargetFolderId(item.parent_id || item.folder_id || '');
+       try {
+         const res = await api.getFolders(1, 10000, null, selectedVillage.id);
+         if (res.success) setAllVillageFolders(res.data);
+       } catch (e) {
+         console.error('Failed to load folders for move', e);
+       }
+    }
+    setMoveOpen(true);
+    setCtxMenu(c => ({ ...c, open: false }));
+  };
+
+  const handleMove = async (e) => {
+    e.preventDefault();
+    if (!moveItem) return;
+    setModalLoading(true);
+    try {
+      const targetId = moveTargetFolderId === '' ? null : parseInt(moveTargetFolderId, 10);
+      if (['states', 'cities', 'tehsils', 'villages'].includes(moveItem.type)) {
+        await api.updateLocation(moveItem.type, moveItem.id, { parent_id: targetId });
+        loadLocations();
+      } else if (moveItem.type === 'folder') {
+        await api.updateFolder(moveItem.id, { parent_id: targetId });
+        loadContent(selectedVillage.id, currentFolder?.id, imgPage, searchQuery);
+      } else {
+        await api.updateImage(moveItem.id, { folder_id: targetId });
+        loadContent(selectedVillage.id, currentFolder?.id, imgPage, searchQuery);
+      }
+      setMoveOpen(false);
+      toast.success('Moved successfully!');
+    } catch (e) {
+      toast.error(e.message || 'Failed to move');
+    } finally {
+      setModalLoading(false);
+    }
   };
 
   const handleDelete = async (item, type) => {
@@ -656,8 +738,7 @@ export default function DrivePage() {
       <aside className={`${styles.sidebar} ${sidebarOpen ? styles.open : ''}`}>
         <div className={styles.sidebarHead}>
           <div className={styles.sidebarLogo}>
-            <span className={styles.sidebarLogoIcon}>🗂️</span>
-            <span className="text-gradient" style={{fontWeight:800,fontSize:'1rem',letterSpacing:'-0.02em'}}>DGDrive</span>
+            <img src="/logo.png" alt="DGDrive Logo" style={{ height: '48px', width: 'auto' }} />
           </div>
           <button className="btn btn-icon btn-ghost" onClick={() => setSidebarOpen(false)}><XIcon /></button>
         </div>
@@ -669,31 +750,48 @@ export default function DrivePage() {
             const isStateExpanded = expandedState === state.id;
             return (
               <div key={state.id} style={{marginBottom:'6px'}}>
-                <button className={styles.stateBtn} onClick={() => setExpandedState(isStateExpanded ? null : state.id)}>
+                <button className={styles.stateBtn} onClick={() => setExpandedState(isStateExpanded ? null : state.id)} onContextMenu={e => openCtx(e, state, 'states')}>
                   <span>🗺️</span> <span className="truncate" style={{flex:1}}>{state.name}</span>
                   <span style={{transform: isStateExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display:'flex'}}><ChevronDownIcon/></span>
                 </button>
                 {isStateExpanded && (
                   <div style={{paddingLeft:'12px', marginTop:'4px', display:'flex', flexDirection:'column', gap:'4px'}}>
                     {stateCities.map(city => {
-                      const cityVillages = villages.filter(v => v.city_id === city.id);
+                      const cityTehsils = tehsils.filter(t => t.city_id === city.id);
                       const isCityExpanded = expandedCity === city.id;
                       return (
                         <div key={city.id}>
-                          <button className={styles.cityBtn} onClick={() => setExpandedCity(isCityExpanded ? null : city.id)}>
+                          <button className={styles.cityBtn} onClick={() => setExpandedCity(isCityExpanded ? null : city.id)} onContextMenu={e => openCtx(e, city, 'cities')}>
                             <span>🏢</span> <span className="truncate" style={{flex:1}}>{city.name}</span>
                             <span style={{transform: isCityExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display:'flex'}}><ChevronDownIcon/></span>
                           </button>
                           {isCityExpanded && (
-                            <div style={{paddingLeft:'14px', marginTop:'4px', display:'flex', flexDirection:'column', gap:'2px'}}>
-                              {cityVillages.map(v => (
-                                <button key={v.id} className={`${styles.villageBtn} ${selectedVillage?.id === v.id ? styles.villageActive : ''}`}
-                                  onClick={() => selectVillage(v)}>
-                                  <span className={styles.villageDot} />
-                                  <span className="truncate">{v.name}</span>
-                                </button>
-                              ))}
-                              {cityVillages.length === 0 && <span style={{fontSize:'0.75rem',color:'var(--txt-3)',padding:'4px 10px'}}>No villages mapped</span>}
+                            <div style={{paddingLeft:'12px', marginTop:'4px', display:'flex', flexDirection:'column', gap:'4px'}}>
+                              {cityTehsils.map(tehsil => {
+                                const tehsilVillages = villages.filter(v => v.tehsil_id === tehsil.id);
+                                const isTehsilExpanded = expandedTehsil === tehsil.id;
+                                return (
+                                  <div key={tehsil.id}>
+                                    <button className={styles.cityBtn} style={{fontSize: '0.8rem'}} onClick={() => setExpandedTehsil(isTehsilExpanded ? null : tehsil.id)} onContextMenu={e => openCtx(e, tehsil, 'tehsils')}>
+                                      <span>📍</span> <span className="truncate" style={{flex:1}}>{tehsil.name}</span>
+                                      <span style={{transform: isTehsilExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display:'flex'}}><ChevronDownIcon/></span>
+                                    </button>
+                                    {isTehsilExpanded && (
+                                      <div style={{paddingLeft:'14px', marginTop:'4px', display:'flex', flexDirection:'column', gap:'2px'}}>
+                                        {tehsilVillages.map(v => (
+                                          <button key={v.id} className={`${styles.villageBtn} ${selectedVillage?.id === v.id ? styles.villageActive : ''}`}
+                                            onClick={() => selectVillage(v)} onContextMenu={e => openCtx(e, v, 'villages')}>
+                                            <span className={styles.villageDot} />
+                                            <span className="truncate">{v.name}</span>
+                                          </button>
+                                        ))}
+                                        {tehsilVillages.length === 0 && <span style={{fontSize:'0.75rem',color:'var(--txt-3)',padding:'4px 10px'}}>No villages mapped</span>}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                              {cityTehsils.length === 0 && <span style={{fontSize:'0.75rem',color:'var(--txt-3)',padding:'4px 10px'}}>No tehsils mapped</span>}
                             </div>
                           )}
                         </div>
@@ -924,8 +1022,11 @@ export default function DrivePage() {
             <EyeIcon /> Preview
           </button>
         )}
-        {ctxMenu.type==='folder' && canCreate() && (
-          <button className={styles.ctxItem} onClick={() => openRename(ctxMenu.item,'folder')}><PencilIcon /> Rename</button>
+        {(ctxMenu.type==='folder' || ['states','cities','tehsils','villages'].includes(ctxMenu.type)) && canRenameOrMove() && (
+          <button className={styles.ctxItem} onClick={() => openRename(ctxMenu.item, ctxMenu.type)}><PencilIcon /> Rename</button>
+        )}
+        {canRenameOrMove() && (
+          <button className={styles.ctxItem} onClick={() => openMove(ctxMenu.item, ctxMenu.type)}>📁 Move To...</button>
         )}
         {canDelete() && <>
           <div className={styles.ctxSep} />
@@ -960,8 +1061,8 @@ export default function DrivePage() {
       {renameOpen && (
         <div className="modal-mask open" onClick={e=>e.target===e.currentTarget&&setRenameOpen(false)}>
           <div className="modal-box">
-            <div className="modal-head"><span className="modal-title">Rename</span><button className="modal-close" onClick={() => setRenameOpen(false)}><XIcon /></button></div>
-            <form onSubmit={handleRename}>
+            <div className="modal-head"><span className="modal-title">Rename {renameItem?.type}</span><button className="modal-close" onClick={() => setRenameOpen(false)}><XIcon /></button></div>
+            <form onSubmit={renameFolder}>
               <div className="modal-body">
                 <div className="form-group">
                   <label className="form-label">New Name</label>
@@ -971,7 +1072,35 @@ export default function DrivePage() {
               <div className="modal-foot">
                 <button type="button" className="btn btn-secondary" onClick={() => setRenameOpen(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={modalLoading||!newName.trim()}>
-                  {modalLoading?<span className="spinner"/>:null} Save
+                  {modalLoading?<span className="spinner"/>:null} Rename
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Move Modal */}
+      {moveOpen && (
+        <div className="modal-mask open" onClick={e=>e.target===e.currentTarget&&setMoveOpen(false)}>
+          <div className="modal-box">
+            <div className="modal-head"><span className="modal-title">Move {moveItem?.type === 'folder' ? 'Folder' : 'Image'}</span><button className="modal-close" onClick={() => setMoveOpen(false)}><XIcon /></button></div>
+            <form onSubmit={handleMove}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Destination Folder</label>
+                  <select className="form-select" value={moveTargetFolderId} onChange={e => setMoveTargetFolderId(e.target.value)}>
+                    <option value="">Root (No Folder)</option>
+                    {allVillageFolders.filter(f => f.id !== moveItem?.id).map(f => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="modal-foot">
+                <button type="button" className="btn btn-secondary" onClick={() => setMoveOpen(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={modalLoading}>
+                  {modalLoading?<span className="spinner"/>:null} Move
                 </button>
               </div>
             </form>
@@ -1049,6 +1178,7 @@ export default function DrivePage() {
                     value={bulkCitySource} 
                     onChange={(e) => {
                       setBulkCitySource(e.target.value);
+                      setBulkTehsilSource('detect');
                       setBulkVillageSource('detect');
                     }}
                     disabled={bulkImportRunning || !bulkStateId}
@@ -1060,6 +1190,27 @@ export default function DrivePage() {
                   </select>
                 </div>
 
+                {/* Tehsil Mapping */}
+                <div className="form-group">
+                  <label className="form-label">Tehsil Mapping</label>
+                  <select 
+                    className="form-select" 
+                    value={bulkTehsilSource} 
+                    onChange={(e) => {
+                      setBulkTehsilSource(e.target.value);
+                      setBulkVillageSource('detect');
+                    }}
+                    disabled={bulkImportRunning || !bulkStateId || bulkCitySource === 'detect'}
+                  >
+                    <option value="detect">🔍 Detect from 2nd folder name</option>
+                    {bulkCitySource !== 'detect' && cities.find(c => String(c.id) === String(bulkCitySource)) &&
+                      tehsils.filter(t => String(t.city_id) === String(bulkCitySource)).map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))
+                    }
+                  </select>
+                </div>
+
                 {/* Village Mapping */}
                 <div className="form-group">
                   <label className="form-label">Village Mapping</label>
@@ -1067,11 +1218,11 @@ export default function DrivePage() {
                     className="form-select" 
                     value={bulkVillageSource} 
                     onChange={(e) => setBulkVillageSource(e.target.value)}
-                    disabled={bulkImportRunning || !bulkStateId}
+                    disabled={bulkImportRunning || !bulkStateId || bulkTehsilSource === 'detect'}
                   >
                     <option value="detect">🔍 Detect from folder name</option>
-                    {bulkCitySource !== 'detect' && cities.find(c => String(c.id) === String(bulkCitySource)) &&
-                      villages.filter(v => String(v.city_id) === String(bulkCitySource)).map(v => (
+                    {bulkTehsilSource !== 'detect' && tehsils.find(t => String(t.id) === String(bulkTehsilSource)) &&
+                      villages.filter(v => String(v.tehsil_id) === String(bulkTehsilSource)).map(v => (
                         <option key={v.id} value={v.id}>{v.name}</option>
                       ))
                     }
