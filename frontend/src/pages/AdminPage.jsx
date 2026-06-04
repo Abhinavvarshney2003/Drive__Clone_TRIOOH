@@ -15,6 +15,8 @@ export default function AdminPage() {
   const [locTab, setLocTab] = useState('countries');
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef(null);
 
   // New Item State
   const [createModal, setCreateModal] = useState({ open: false, type: null });
@@ -22,6 +24,22 @@ export default function AdminPage() {
 
   // For location dropdowns when creating cities/villages
   const [parentOptions, setParentOptions] = useState([]);
+
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const res = await api.importExcel(file);
+      toast.success(res.message || 'Import successful!');
+      loadData();
+    } catch (err) {
+      toast.error(err.message || 'Import failed');
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   useEffect(() => {
     if (!isAdmin()) {
@@ -151,7 +169,13 @@ export default function AdminPage() {
       <div className={styles.card}>
         <div className={styles.cardHead}>
           <h2 className={styles.cardTitle}>{locTab.charAt(0).toUpperCase() + locTab.slice(1)}</h2>
-          <button className="btn btn-primary btn-sm" onClick={() => openCreateModal(locTab)}>+ Add New</button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept=".xlsx, .xls" onChange={handleImport} />
+            <button className="btn btn-secondary btn-sm" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+              {importing ? 'Importing...' : '📥 Import Excel'}
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={() => openCreateModal(locTab)}>+ Add New</button>
+          </div>
         </div>
         <div style={{overflowX:'auto'}}>
           <table className={styles.table}>

@@ -82,6 +82,12 @@ class ApiClient {
   }
   deleteImage(id) { return this.request(`/images/${id}`, { method: 'DELETE' }); }
   updateImage(id, payload) { return this.request(`/images/${id}`, { method: 'PUT', body: JSON.stringify(payload) }); }
+  importExcel(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request('/locations/import', { method: 'POST', body: formData });
+  }
+
 }
 
 const api = new ApiClient();
