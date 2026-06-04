@@ -1,0 +1,21 @@
+#!/usr/bin/expect -f
+set password [lindex $argv 0]
+spawn sftp -o StrictHostKeyChecking=no -P 2022 abhinav1426.28f096dd@sg1.reaverhosting.cloud
+expect {
+    "password:" {
+        send "$password\r"
+        expect "sftp>" {
+            send "ls\r"
+            expect "sftp>" {
+                send "bye\r"
+                exit 0
+            }
+        }
+    }
+    "Permission denied" {
+        exit 1
+    }
+    timeout {
+        exit 2
+    }
+}
