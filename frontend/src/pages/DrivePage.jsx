@@ -891,7 +891,7 @@ export default function DrivePage() {
               </button>
             )}
             <div className="dd-wrap">
-              <button className={styles.userBtn} onClick={() => setUserMenuOpen(v => !v)}>
+              <button className={styles.userBtn} onClick={() => setUserMenuOpen(v => !v)} style={{ color: '#fff' }}>
                 <div style={{width:28,height:28,borderRadius:'50%',background:avatarBg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'0.7rem',fontWeight:800,color:'#fff'}}>{initials}</div>
                 <span className={styles.hideSm} style={{fontSize:'0.84rem',fontWeight:600,maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user?.name?.split(' ')[0]}</span>
                 <ChevronDownIcon />
